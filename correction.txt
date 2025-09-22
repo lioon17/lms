@@ -1,0 +1,68 @@
+session guard "use client";
+import { useSessionGuard } from "@/hooks/useSessionGuard";
+
+export default function DashboardPage() {
+  const { authorized, role, name } = useSessionGuard("student");
+
+  if (authorized === null) return <p>Loading...</p>;
+
+  return authorized ? (
+    <div>
+      <h1>Welcome {name}, role: {role}</h1>
+    </div>
+  ) : null;
+}
+
+
+CREATE TABLE quizzes (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+
+  -- parent pointers (exactly one will be used)
+  module_id BIGINT NULL,
+  scope ENUM('module','lesson') NOT NULL,
+  lesson_id BIGINT NULL,
+
+  title VARCHAR(200) NOT NULL,
+
+  -- controls
+  attempts_allowed INT NOT NULL DEFAULT 3,
+  time_limit_seconds INT NULL,
+  weight DECIMAL(5,2) NOT NULL DEFAULT 1.00,
+
+  -- optional UX toggles
+  shuffle_questions TINYINT(1) NOT NULL DEFAULT 0,
+  shuffle_options   TINYINT(1) NOT NULL DEFAULT 0,
+  feedback_mode ENUM('immediate','on_finish','none') NOT NULL DEFAULT 'on_finish',
+
+  is_final TINYINT(1) NOT NULL DEFAULT 0,
+
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_quizzes_module FOREIGN KEY (module_id) REFERENCES modules(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_quizzes_lesson FOREIGN KEY (lesson_id) REFERENCES lessons(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+
+  -- integrity
+  CONSTRAINT chk_quiz_parent_exactly_one
+    CHECK (
+      (scope = 'module' AND module_id IS NOT NULL AND lesson_id IS NULL)
+      OR
+      (scope = 'lesson' AND lesson_id IS NOT NULL AND module_id IS NULL)
+    ),
+  CONSTRAINT chk_quiz_is_final_by_scope
+    CHECK (
+      (scope = 'module' AND is_final = 1) OR
+      (scope = 'lesson' AND is_final = 0)
+    ),
+  CONSTRAINT chk_quizzes_attempts_min CHECK (attempts_allowed >= 1),
+  CONSTRAINT chk_quizzes_time_limit_nonneg CHECK (time_limit_seconds IS NULL OR time_limit_seconds >= 0),
+  CONSTRAINT chk_quizzes_weight_nonneg CHECK (weight >= 0),
+
+  -- enforce one final per module
+  UNIQUE KEY uniq_module_final_quiz (module_id, is_final)
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_quizzes_module_scope ON quizzes(module_id, scope);
+CREATE INDEX idx_quizzes_lesson_scope ON quizzes(lesson_id, scope);
