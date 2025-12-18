@@ -125,12 +125,26 @@ export async function deleteProgress({ enrollmentId, entityType, entityId }) {
 
 // -----------------------------------------------------
 // Fetch aggregated summary for the progress sidebar
-// -----------------------------------------------------
-export async function getProgressSummary({ enrollmentId, courseId }) {
-  const params = new URLSearchParams();
-  if (enrollmentId) params.set("enrollmentId", enrollmentId);
-  if (courseId) params.set("courseId", courseId);
-  return jsonFetch(`/api/progress/summary?${params.toString()}`);
+// lib/api/progress.js
+
+export async function getProgressSummary({ enrollmentId }) {
+  if (!enrollmentId) throw new Error("enrollmentId is required");
+
+  const url = `/api/progress/summary?enrollmentId=${encodeURIComponent(enrollmentId)}`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    credentials: "include", // keep cookies/sessions if you use them
+    cache: "no-store",
+    headers: { "Accept": "application/json" },
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Failed to fetch progress summary (${res.status}): ${text || res.statusText}`);
+  }
+
+  return res.json();
 }
 
 
