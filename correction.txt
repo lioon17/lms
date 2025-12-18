@@ -66,3 +66,40 @@ CREATE TABLE quizzes (
 
 CREATE INDEX idx_quizzes_module_scope ON quizzes(module_id, scope);
 CREATE INDEX idx_quizzes_lesson_scope ON quizzes(lesson_id, scope);
+
+
+import { useSearchParams } from "next/navigation";
+import { useSessionGuard } from "@/hooks/useSessionGuard";
+ const { authorized } = useSessionGuard(null, true, "/auth");
+    const searchParams = useSearchParams();
+    const courseId = searchParams.get("courseId");
+      if (authorized === null) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (!authorized) return null; // hook already redirected
+
+
+
+http://localhost:3000/api/lessons/sections
+{
+  "lesson_id": 1001,
+  "position": 5,
+  "title": "What is React?",
+  "body": "Intro to React fundamentals...",
+  "est_read_seconds": 180,
+  "is_checkpoint": true
+}
+
+http://localhost:3000/api/lessons/blocks
+{
+  "section_id": 2011,
+  "position": 2,
+  "kind": "image",
+  "media_url": "https://cdn.example.com/img/react-jsx.png",
+  "content": "JSX diagram (alt text)"
+}
+
+http://localhost:3000/api/lessons/progress
+{
+  "user_id": 5,
+  "enrollment_id": 2,
+  "section_id": 2002
+}

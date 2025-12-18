@@ -1,32 +1,48 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { BookOpen, Trophy, Clock, Flame } from "lucide-react"
+import { useSessionGuard } from "@/hooks/useSessionGuard"
 
 export function KPICards() {
+  const { authorized, userId } = useSessionGuard(null, false) // no redirect here
+  const [activeCount, setActiveCount] = useState(null)
+  const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        if (!authorized) return
+        if (!userId) throw new Error("Missing user id")
+        const res = await fetch(`/api/enrollments/active-count/${userId}`, { cache: "no-store" })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json?.error || "Failed to load active courses")
+        if (alive) {
+          setActiveCount(Number(json.active_count ?? 0))
+          setError(null)
+        }
+      } catch (e) {
+        if (alive) setError(e.message)
+      } finally {
+        if (alive) setLoading(false)
+      }
+    })()
+    return () => { alive = false }
+  }, [authorized, userId])
+
   const kpis = [
     {
       title: "Courses in Progress",
-      value: "4",
+      value: loading ? "…" : error ? "—" : String(activeCount ?? 0),
       icon: BookOpen,
       color: "text-chart-1",
     },
-    {
-      title: "Certificates Earned",
-      value: "12",
-      icon: Trophy,
-      color: "text-chart-2",
-    },
-    {
-      title: "Quizzes Due",
-      value: "3",
-      icon: Clock,
-      color: "text-chart-4",
-    },
-    {
-      title: "Learning Streak",
-      value: "15 days",
-      icon: Flame,
-      color: "text-chart-5",
-    },
+    { title: "Certificates Earned", value: "12", icon: Trophy, color: "text-chart-2" },
+    { title: "Quizzes Due", value: "3", icon: Clock, color: "text-chart-4" },
+    { title: "Learning Streak", value: "15 days", icon: Flame, color: "text-chart-5" },
   ]
 
   return (

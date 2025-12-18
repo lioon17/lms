@@ -1,18 +1,35 @@
 import { NextResponse } from "next/server"
 import db from "@/lib/db"
 
-// GET /api/quizzes?moduleId=&lessonId=
+ 
+
+// ✅ GET /api/quizzes?moduleId=&lessonId=&scope=&isFinal=
 export async function GET(request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const moduleId = searchParams.get("moduleId")
-    const lessonId = searchParams.get("lessonId")
+    const { searchParams } = new URL(request.url);
+    const moduleId = searchParams.get("moduleId");
+    const lessonId = searchParams.get("lessonId");
+    const scope = searchParams.get("scope");
+    const isFinal = searchParams.get("isFinal");
 
-    const where = []
-    const params = []
+    const where = [];
+    const params = [];
 
-    if (moduleId) { where.push("module_id = ?"); params.push(Number(moduleId)) }
-    if (lessonId) { where.push("lesson_id = ?"); params.push(Number(lessonId)) }
+    if (moduleId) {
+      where.push("module_id = ?");
+      params.push(Number(moduleId));
+    }
+    if (lessonId) {
+      where.push("lesson_id = ?");
+      params.push(Number(lessonId));
+    }
+    if (scope) {
+      where.push("scope = ?");
+      params.push(scope);
+    }
+    if (isFinal) {
+      where.push("is_final = 1");
+    }
 
     const [rows] = await db.execute(
       `
@@ -25,14 +42,15 @@ export async function GET(request) {
       ORDER BY created_at DESC
       `,
       params
-    )
+    );
 
-    return NextResponse.json(rows, { status: 200 })
+    return NextResponse.json(rows, { status: 200 });
   } catch (error) {
-    console.error("Error fetching quizzes:", error)
-    return NextResponse.json({ error: "Failed to fetch quizzes" }, { status: 500 })
+    console.error("Error fetching quizzes:", error);
+    return NextResponse.json({ error: "Failed to fetch quizzes" }, { status: 500 });
   }
 }
+
 
 // POST /api/quizzes
 export async function POST(request) {

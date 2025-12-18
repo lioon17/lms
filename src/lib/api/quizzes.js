@@ -1,5 +1,14 @@
 import { fetchAPI } from "./base"
 
+function resolveQuizId(quizId) {
+  if (typeof quizId === "string" && quizId.includes("-")) {
+    const parts = quizId.split("-");
+    const num = parts.find((p) => /^\d+$/.test(p));
+    if (num) return parseInt(num, 10);
+  }
+  return quizId;
+}
+
 // Shape normalizer → make all fields consistent for UI
 export function normalizeQuiz(q = {}) {
   return {
@@ -41,9 +50,9 @@ export async function getQuizById(quizId) {
 }
 
 export async function getQuizzesByModule(moduleId) {
-  const res = await fetchAPI(`/modules/${moduleId}/quizzes`, { method: "GET" })
-  const list = res?.quizzes || res?.data || []
-  return list.map(normalizeQuiz)
+  const r = await fetch(`/api/quizzes?moduleId=${moduleId}`, { cache: "no-store" });
+  if (!r.ok) throw new Error("Failed to fetch module quizzes");
+  return r.json(); // expect array
 }
 
 export async function getQuizzesByLesson(lessonId) {
@@ -66,3 +75,98 @@ export async function updateQuiz(quizId, updates) {
 export async function deleteQuiz(quizId) {
   return fetchAPI(`/quizzes/${quizId}`, { method: "DELETE" })
 }
+
+
+// ✅ Get all questions for a quiz
+export async function getQuizQuestions(quizId) {
+  const resolvedId = resolveQuizId(quizId);
+  console.log("🧩 Resolved quiz ID:", resolvedId);
+  return fetchAPI(`/quizzes/${resolvedId}/questions`);
+}
+
+
+// ✅ Create a new question (with optional answers)
+export async function createQuizQuestion(quizId, questionData) {
+  return fetchAPI(`/quizzes/${quizId}/questions`, {
+    method: "POST",
+    body: questionData,
+  });
+}
+
+// ✅ Get one question (with answers)
+export async function getQuestion(questionId) {
+  return fetchAPI(`/questions/${questionId}`);
+}
+
+// ✅ Update a question
+export async function updateQuestion(questionId, updates) {
+  return fetchAPI(`/questions/${questionId}`, {
+    method: "PATCH",
+    body: updates,
+  });
+}
+
+// ✅ Delete a question
+export async function deleteQuestion(questionId) {
+  return fetchAPI(`/questions/${questionId}`, {
+    method: "DELETE",
+  });
+}
+
+// ✅ Get all answers for a question
+export async function getQuestionAnswers(questionId) {
+  return fetchAPI(`/questions/${questionId}/answers`);
+}
+
+// ✅ Create an answer
+export async function createAnswer(questionId, answerData) {
+  return fetchAPI(`/questions/${questionId}/answers`, {
+    method: "POST",
+    body: answerData,
+  });
+}
+
+// ✅ Update an answer
+export async function updateAnswer(answerId, updates) {
+  return fetchAPI(`/answers/${answerId}`, {
+    method: "PATCH",
+    body: updates,
+  });
+}
+
+// ✅ Delete an answer
+export async function deleteAnswer(answerId) {
+  return fetchAPI(`/answers/${answerId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function startQuiz(id) {
+  const r = await fetch(`/api/quizzes/${id}/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store"
+  });
+  if (!r.ok) {
+    let err;
+    try { err = await r.json(); } catch {}
+    throw new Error(err?.error || `Failed to start (HTTP ${r.status})`);
+  }
+  return r.json();
+}
+
+export async function submitAttempt(attemptId, answers) {
+  const r = await fetch(`/api/attempts/${attemptId}/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({ answers })
+  });
+  if (!r.ok) {
+    let err;
+    try { err = await r.json(); } catch {}
+    throw new Error(err?.error || `Submit failed (HTTP ${r.status})`);
+  }
+  return r.json();
+}
+

@@ -10,11 +10,14 @@ import { CertificatesSection } from "@/components/students/certificates-section"
 import { NotificationsPanel } from "@/components/students/notifications-panel"
 import { CourseLearnPage } from "@/components/students/course-learn-page"
 import { QuizInterface } from "@/components/students/quiz-interface"
+import { useSessionGuard } from "@/hooks/useSessionGuard";
 
 export default function StudentDashboard() {
   const [currentView, setCurrentView] = useState("dashboard")
   const [selectedCourse, setSelectedCourse] = useState(null)
   const [selectedQuiz, setSelectedQuiz] = useState(null)
+  const { authorized, role, name } = useSessionGuard("student", true, "/auth/sign-in");
+
 
   const handleCourseSelect = (course) => {
     setSelectedCourse(course)
@@ -39,6 +42,12 @@ export default function StudentDashboard() {
   if (currentView === "quiz" && selectedQuiz) {
     return <QuizInterface quiz={selectedQuiz} onBack={handleBackToDashboard} />
   }
+    if (authorized === null) {
+    return <p className="text-sm text-muted-foreground">Checking your session…</p>;
+  }
+
+  // If unauthorized, the hook already redirected. Returning null avoids flicker.
+  if (!authorized) return null;
 
   return (
     <div className="min-h-screen bg-background">

@@ -8,10 +8,13 @@ export default function HeroSection() {
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           <div className="space-y-8">
             <div className="space-y-4">
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-balance leading-tight">
-                Learn Anytime,
-                <span className="text-accent"> Succeed Anywhere</span>
-              </h1>
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-snug">
+            Learn Anytime,<br />
+            <span className="text-indigo-500 block">
+              Succeed Anywhere
+            </span>
+          </h1>
+
               <p className="text-xl text-muted-foreground text-pretty max-w-2xl">
                 Master new skills with personalized learning paths, expert instructors, and industry-recognized
                 certificates. Learn at your own pace, on any device.

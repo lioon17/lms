@@ -10,70 +10,75 @@ import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Textarea } from "@/components/ui/textarea"
 import { ArrowLeft, Clock, CheckCircle, XCircle, RotateCcw, AlertTriangle } from "lucide-react"
+import { startQuiz, submitAttempt } from "@/lib/api/quizzes";
+import {
+  startProgress,
+  completeProgress,
+  recordQuizProgress,
+} from "@/lib/api/progress";
 
-export function QuizInterface({ quiz, onBack }) {
+
+export function QuizInterface({ quiz, enrollmentId, onBack }) {
+  console.log("🟩 Received quiz prop:", quiz);
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [answers, setAnswers] = useState({})
   const [timeLeft, setTimeLeft] = useState(600) // 10 minutes
   const [quizState, setQuizState] = useState("start")
   const [score, setScore] = useState(0)
+  const [attemptId, setAttemptId] = useState(null);
+  const [resultDetails, setResultDetails] = useState([]);
 
-  const questions = [
-    {
-      id: 1,
-      type: "single",
-      question: "What is the primary benefit of component composition in React?",
-      options: [
-        "Better performance",
-        "Code reusability and maintainability",
-        "Smaller bundle size",
-        "Faster rendering",
-      ],
-      correct: 1,
-      explanation:
-        "Component composition promotes code reusability and maintainability by allowing you to build complex UIs from simple, reusable components.",
-    },
-    {
-      id: 2,
-      type: "multiple",
-      question: "Which of the following are valid ways to compose components? (Select all that apply)",
-      options: ["Using props.children", "Render props pattern", "Higher-order components", "Direct DOM manipulation"],
-      correct: [0, 1, 2],
-      explanation:
-        "Props.children, render props, and HOCs are all valid composition patterns. Direct DOM manipulation goes against React principles.",
-    },
-    {
-      id: 3,
-      type: "boolean",
-      question: "Component composition can only be achieved through props.children.",
-      correct: false,
-      explanation:
-        "Component composition can be achieved through multiple patterns including props.children, render props, HOCs, and more.",
-    },
-    {
-      id: 4,
-      type: "text",
-      question: 'Explain in one sentence what makes a component "composable".',
-      sampleAnswer:
-        "A composable component is designed to work well with other components and can be easily combined to create more complex functionality.",
-      explanation:
-        "Composable components are designed with clear interfaces and single responsibilities, making them easy to combine and reuse.",
-    },
-    {
-      id: 5,
-      type: "single",
-      question: "When should you prefer composition over inheritance in React?",
-      options: [
-        "Never, inheritance is always better",
-        "Only for simple components",
-        "Almost always, as React recommends composition",
-        "Only when performance is critical",
-      ],
-      correct: 2,
-      explanation:
-        "React strongly recommends composition over inheritance for component reuse, as it provides more flexibility and clearer component relationships.",
-    },
-  ]
+
+
+    const [questions, setQuestions] = useState([]);
+    const [loading, setLoading] = useState(false);
+    
+    const [error, setError] = useState(null);
+  const [initialTimeLimit, setInitialTimeLimit] = useState(600);
+ 
+  const handleStart = async () => {
+  if (loading) return; // prevent double click
+  try {
+    setLoading(true);
+    setError(null);
+
+    // accept id, quiz_id, or slug (string/number)
+    const idOrSlug = quiz?.id ?? quiz?.quiz_id ?? quiz?.slug;
+    if (!idOrSlug) {
+      throw new Error("No quiz identifier found (expected id, quiz_id, or slug).");
+    }
+
+    console.log("▶️ Starting quiz with:", idOrSlug);
+
+    const payload = await startQuiz(idOrSlug); // POST /api/quizzes/:idOrSlug/start
+    console.log("✅ Start payload:", payload);
+
+    setAttemptId(payload.attempt_id);
+
+    if (typeof payload.time_limit_seconds === "number") {
+      setTimeLeft(payload.time_limit_seconds);
+       setInitialTimeLimit(payload.time_limit_seconds); 
+    }
+
+    const normalized = (payload.questions || []).map((q) => ({
+      id: q.id,
+      type: mapQuestionType(q.type || q.question_type),
+      question: q.question,
+      options: (q.options || []).map(o => ({ id: o.id, text: o.text }))
+    }));
+
+    setQuestions(normalized);
+    setQuizState("taking");
+  } catch (e) {
+    console.error("Start quiz failed:", e);
+    setError(e?.message || "Failed to start quiz");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+
 
   useEffect(() => {
     if (quizState === "taking" && timeLeft > 0) {
@@ -83,6 +88,23 @@ export function QuizInterface({ quiz, onBack }) {
       handleSubmit()
     }
   }, [timeLeft, quizState])
+
+
+  function mapQuestionType(dbType) {
+  switch (dbType) {
+    case "multiple_choice":
+      return "single";
+    case "true_false":
+      return "boolean";
+    case "short_answer":
+    case "fill_blank":
+      return "text";
+    default:
+      return "single";
+  }
+}
+
+ 
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60)
@@ -94,93 +116,88 @@ export function QuizInterface({ quiz, onBack }) {
     setAnswers((prev) => ({ ...prev, [questionId]: answer }))
   }
 
-  const handleSubmit = () => {
-    // Calculate score
-    let correctAnswers = 0
-    questions.forEach((q, index) => {
-      const userAnswer = answers[q.id]
-      if (q.type === "single" || q.type === "boolean") {
-        if (userAnswer === q.correct) correctAnswers++
-      } else if (q.type === "multiple") {
-        const correct = Array.isArray(q.correct) ? q.correct.sort() : []
-        const user = Array.isArray(userAnswer) ? userAnswer.sort() : []
-        if (JSON.stringify(correct) === JSON.stringify(user)) correctAnswers++
-      } else if (q.type === "text") {
-        // For demo purposes, assume text answers are correct if they exist
-        if (userAnswer && userAnswer.trim().length > 10) correctAnswers++
-      }
-    })
+ 
+const handleSubmit = async () => {
+  try {
+    setLoading(true);
+    setError(null);
+    if (!attemptId) throw new Error("Attempt not started");
 
-    const finalScore = Math.round((correctAnswers / questions.length) * 100)
-    setScore(finalScore)
-    setQuizState("results")
+    const result = await submitAttempt(attemptId, answers);
+    setScore(Math.round(result.score));
+    setResultDetails(result.details || []);
+    setQuizState("results");
+
+    // progress tracking
+    await recordQuizProgress({
+      enrollmentId: quiz?.enrollment_id || 2,
+      quizId: quiz.id,
+      passed: result.score >= 70,
+      score: result.score,
+      secondsSpent: ((initialTimeLimit ?? 600) - timeLeft) || 0,
+    });
+  } catch (e) {
+    console.error("Submit failed:", e);
+    setError(e.message || "Failed to submit quiz");
+  } finally {
+    setLoading(false);
   }
+};
+
+
 
   const renderQuestion = (question) => {
     const answer = answers[question.id]
 
     switch (question.type) {
-      case "single":
-        return (
-          <RadioGroup
-            value={answer?.toString()}
-            onValueChange={(value) => handleAnswerChange(question.id, Number.parseInt(value))}
-          >
-            {question.options.map((option, index) => (
-              <div key={index} className="flex items-center space-x-2">
-                <RadioGroupItem value={index.toString()} id={`q${question.id}-${index}`} />
-                <Label htmlFor={`q${question.id}-${index}`} className="text-pretty">
-                  {option}
-                </Label>
-              </div>
-            ))}
-          </RadioGroup>
-        )
+    case "single":
+case "boolean":
+  return (
+    <RadioGroup
+      value={answer?.toString()}
+      onValueChange={(value) => handleAnswerChange(question.id, Number(value))}
+    >
+      {question.options.map((opt) => (
+        <div key={opt.id} className="flex items-center space-x-2">
+          <RadioGroupItem value={String(opt.id)} id={`q${question.id}-${opt.id}`} />
+          <Label htmlFor={`q${question.id}-${opt.id}`} className="text-pretty">
+            {opt.text}
+          </Label>
+        </div>
+      ))}
+    </RadioGroup>
+  );
+
 
       case "multiple":
+  return (
+    <div className="space-y-2">
+      {question.options.map((opt) => {
+        const current = Array.isArray(answer) ? answer : [];
+        const checked = current.includes(opt.id);
         return (
-          <div className="space-y-2">
-            {question.options.map((option, index) => (
-              <div key={index} className="flex items-center space-x-2">
-                <Checkbox
-                  id={`q${question.id}-${index}`}
-                  checked={Array.isArray(answer) && answer.includes(index)}
-                  onCheckedChange={(checked) => {
-                    const currentAnswers = Array.isArray(answer) ? answer : []
-                    if (checked) {
-                      handleAnswerChange(question.id, [...currentAnswers, index])
-                    } else {
-                      handleAnswerChange(
-                        question.id,
-                        currentAnswers.filter((a) => a !== index),
-                      )
-                    }
-                  }}
-                />
-                <Label htmlFor={`q${question.id}-${index}`} className="text-pretty">
-                  {option}
-                </Label>
-              </div>
-            ))}
+          <div key={opt.id} className="flex items-center space-x-2">
+            <Checkbox
+              id={`q${question.id}-${opt.id}`}
+              checked={checked}
+              onCheckedChange={(isOn) => {
+                if (isOn) {
+                  handleAnswerChange(question.id, [...current, opt.id]);
+                } else {
+                  handleAnswerChange(question.id, current.filter((v) => v !== opt.id));
+                }
+              }}
+            />
+            <Label htmlFor={`q${question.id}-${opt.id}`} className="text-pretty">
+              {opt.text}
+            </Label>
           </div>
-        )
+        );
+      })}
+    </div>
+  );
 
-      case "boolean":
-        return (
-          <RadioGroup
-            value={answer?.toString()}
-            onValueChange={(value) => handleAnswerChange(question.id, value === "true")}
-          >
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="true" id={`q${question.id}-true`} />
-              <Label htmlFor={`q${question.id}-true`}>True</Label>
-            </div>
-            <div className="flex items-center space-x-2">
-              <RadioGroupItem value="false" id={`q${question.id}-false`} />
-              <Label htmlFor={`q${question.id}-false`}>False</Label>
-            </div>
-          </RadioGroup>
-        )
+       
 
       case "text":
         return (
@@ -196,6 +213,16 @@ export function QuizInterface({ quiz, onBack }) {
         return null
     }
   }
+ 
+
+if (error) {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <p className="text-red-500">{error}</p>
+    </div>
+  );
+}
+
 
   if (quizState === "start") {
     return (
@@ -240,10 +267,16 @@ export function QuizInterface({ quiz, onBack }) {
                 between questions, but the timer will continue running.
               </p>
             </div>
+            <Button
+            type="button"
+            className="w-full"
+            onClick={handleStart}
+            disabled={loading}
+          >
+            {loading ? "Starting…" : "Start Quiz"}
+          </Button>
 
-            <Button className="w-full" onClick={() => setQuizState("taking")}>
-              Start Quiz
-            </Button>
+
           </CardContent>
         </Card>
       </div>
@@ -252,6 +285,14 @@ export function QuizInterface({ quiz, onBack }) {
 
   if (quizState === "results") {
     const passed = score >= 70
+    if (!questions[currentQuestion]) {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <p className="text-muted-foreground">Preparing your quiz...</p>
+    </div>
+  );
+}
+
 
     return (
       <div className="min-h-screen bg-background">
@@ -313,55 +354,64 @@ export function QuizInterface({ quiz, onBack }) {
                 )}
               </CardContent>
             </Card>
+              {/* Question Review */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-balance">Question Review</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {questions.map((question, index) => {
+                    const detail = resultDetails.find((d) => d.question_id === question.id);
+                    const isCorrect = detail?.result === "correct";
+                    const userAnswerId = detail?.your;
+                    const correctAnswers = detail?.correct || [];
+                    const userAnswerText = (() => {
+                      if (Array.isArray(userAnswerId)) {
+                        return question.options
+                          .filter((o) => userAnswerId.includes(o.id))
+                          .map((o) => o.text)
+                          .join(", ");
+                      } else {
+                        const opt = question.options.find((o) => o.id === userAnswerId);
+                        return opt ? opt.text : String(userAnswerId ?? "—");
+                      }
+                    })();
 
-            {/* Question Review */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-balance">Question Review</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {questions.map((question, index) => {
-                  const userAnswer = answers[question.id]
-                  const isCorrect = (() => {
-                    if (question.type === "single" || question.type === "boolean") {
-                      return userAnswer === question.correct
-                    } else if (question.type === "multiple") {
-                      const correct = Array.isArray(question.correct) ? question.correct.sort() : []
-                      const user = Array.isArray(userAnswer) ? userAnswer.sort() : []
-                      return JSON.stringify(correct) === JSON.stringify(user)
-                    } else if (question.type === "text") {
-                      return userAnswer && userAnswer.trim().length > 10
-                    }
-                    return false
-                  })()
-
-                  return (
-                    <div key={question.id} className="border rounded-lg p-4 space-y-3">
-                      <div className="flex items-start gap-3">
-                        {isCorrect ? (
-                          <CheckCircle className="w-5 h-5 text-chart-1 mt-0.5" />
-                        ) : (
-                          <XCircle className="w-5 h-5 text-chart-5 mt-0.5" />
-                        )}
-                        <div className="flex-1">
-                          <h4 className="font-medium text-balance">
-                            Question {index + 1}: {question.question}
-                          </h4>
-
-                          {question.explanation && (
-                            <div className="mt-2 p-3 bg-muted rounded-lg">
-                              <p className="text-sm text-pretty">
-                                <strong>Explanation:</strong> {question.explanation}
-                              </p>
-                            </div>
+                    return (
+                      <div key={question.id} className="border rounded-lg p-4 space-y-3">
+                        <div className="flex items-start gap-3">
+                          {isCorrect ? (
+                            <CheckCircle className="w-5 h-5 text-green-500 mt-0.5" />
+                          ) : (
+                            <XCircle className="w-5 h-5 text-red-500 mt-0.5" />
                           )}
+                          <div className="flex-1">
+                            <h4 className="font-medium text-balance">
+                              Question {index + 1}: {question.question}
+                            </h4>
+
+                            {/* User's answer */}
+                            <p
+                              className={`mt-2 text-sm font-medium ${
+                                isCorrect ? "text-green-600" : "text-red-600"
+                              }`}
+                            >
+                              Your answer: {userAnswerText || "—"}
+                            </p>
+
+                            {/* Correct answer */}
+                            <p className="text-sm text-muted-foreground">
+                              Correct answer:{" "}
+                              {correctAnswers.map((c) => c.text).join(", ") || "—"}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )
-                })}
-              </CardContent>
-            </Card>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+
 
             <div className="flex gap-3">
               <Button variant="outline" onClick={onBack} className="flex-1 bg-transparent">
@@ -419,11 +469,17 @@ export function QuizInterface({ quiz, onBack }) {
       <div className="container mx-auto px-4 py-6">
         <div className="max-w-2xl mx-auto">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-balance">{questions[currentQuestion].question}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {renderQuestion(questions[currentQuestion])}
+         <CardHeader>
+          <CardTitle className="text-balance">
+            {questions[currentQuestion]?.question || "Loading question..."}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {questions[currentQuestion] ? (
+            renderQuestion(questions[currentQuestion])
+          ) : (
+            <p className="text-muted-foreground">Preparing your quiz...</p>
+          )}
 
               <div className="flex justify-between">
                 <Button

@@ -23,40 +23,59 @@ export default function HomePage() {
   const [otp, setOtp] = useState(["", "", "", "", "", ""])
   const [acceptedPrivacyPolicy, setAcceptedPrivacyPolicy] = useState(false)
 
+  // Top of file
+const ROLE_ROUTES = {
+  admin: "/dashboard",
+  student: "/student-dashboard",        // <- adjust if your student route differs
+  instructor: "/instructor/dashboard",  // optional
+};
+
+const routeForRole = (r) => ROLE_ROUTES[(r || "").toLowerCase()] || "/dashboard";
+
   // Redirect if already logged in
   if (user) {
     router.push("/dashboard")
     return null
   }
 
-  const handleLogin = async (formData) => {
-  setIsLoading(true)
-  const email = formData.get("email")?.trim().toLowerCase()
-  const password = formData.get("password") || ""
+const handleLogin = async (formData) => {
+  setIsLoading(true);
+  const email = formData.get("email")?.trim().toLowerCase();
+  const password = formData.get("password") || "";
 
-  const toastId = toast.loading("Signing you in...") // show loading
+  const toastId = toast.loading("Signing you in...");
   try {
     const res = await fetch("/api/auth/signin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
-    })
-    const data = await res.json()
-
+    });
+    const data = await res.json();
     if (!res.ok) {
-      // replace loading with error toast
-      toast.error(data?.error || "Invalid credentials", { id: toastId })
-      return
+      toast.error(data?.error || "Invalid credentials", { id: toastId });
+      return;
     }
 
-    toast.success("Welcome back!", { id: toastId })
-    router.push("/dashboard")
+    // Prefer ?returnTo=... from the URL (set by your guard)
+    const sp = new URLSearchParams(window.location.search);
+    const returnTo = sp.get("returnTo");
+
+    // Get role from signin response or fall back to /api/auth/session
+    let role = data?.role || data?.user?.role;
+    if (!role) {
+      const s = await fetch("/api/auth/session", { cache: "no-store" }).then((r) => r.json());
+      role = s?.role;
+    }
+
+    toast.success("Welcome back!", { id: toastId });
+    router.replace(returnTo || routeForRole(role));
   } catch (e) {
-    toast.error(e.message || "Something went wrong", { id: toastId })
+    toast.error(e.message || "Something went wrong", { id: toastId });
   } finally {
-    setIsLoading(false)
+    setIsLoading(false);
   }
-}
+};
+
 
   const handleRegister = async (formData) => {
   setIsLoading(true)

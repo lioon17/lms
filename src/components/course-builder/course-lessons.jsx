@@ -9,8 +9,23 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Plus, Video, FileText, Monitor, Edit, Trash2, Clock, Play } from "lucide-react"
-import { createLesson, getLessonsByModule, updateLesson, deleteLesson } from "@/lib/api/lessons"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  Plus,
+  Video,
+  FileText,
+  Monitor,
+  Edit,
+  Clock,
+  Play,
+  ImageIcon,
+  Type,
+  Code,
+  ChevronDown,
+  ChevronRight,
+  GripVertical,
+  CheckCircle,
+} from "lucide-react"
 
 export function CourseLessons({ course, onUpdate, onSave }) {
   console.log("CourseLessons received:", { course, modules: course.modules })
@@ -21,17 +36,15 @@ export function CourseLessons({ course, onUpdate, onSave }) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  const modules = useMemo(() => course.modules || [], [course.modules])
+  const [expandedLessons, setExpandedLessons] = useState({})
+  const [isAddSectionOpen, setIsAddSectionOpen] = useState(false)
+  const [isAddBlockOpen, setIsAddBlockOpen] = useState(false)
+  const [selectedLesson, setSelectedLesson] = useState(null)
+  const [selectedSection, setSelectedSection] = useState(null)
+  const [editingSection, setEditingSection] = useState(null)
+  const [editingBlock, setEditingBlock] = useState(null)
 
-  const moduleIds = useMemo(
-    () =>
-      modules
-        .map((m) => m?.id)
-        .filter(Boolean)
-        .sort()
-        .join(","),
-    [modules],
-  )
+  const modules = useMemo(() => course.modules || [], [course.modules])
 
   const handleLessonsUpdate = useCallback((moduleId, newLessons) => {
     setLessonsByModule((prev) => ({
@@ -41,78 +54,178 @@ export function CourseLessons({ course, onUpdate, onSave }) {
   }, [])
 
   useEffect(() => {
-    if (!moduleIds) {
-      setLessonsByModule({})
-      return
-    }
+    // Initialize lessons from course modules with sections and blocks
+    const initialLessons = {}
+    modules.forEach((module) => {
+      if (module.lessons) {
+        initialLessons[String(module.id)] = module.lessons.map((lesson) => ({
+          ...lesson,
+          sections: lesson.sections || [
+            {
+              id: Date.now(),
+              lesson_id: lesson.id,
+              position: 1,
+              title: "Introduction",
+              body: "Welcome to this lesson...",
+              est_read_seconds: 120,
+              is_checkpoint: false,
+              blocks: [
+                {
+                  id: Date.now() + 1,
+                  section_id: Date.now(),
+                  position: 1,
+                  kind: "text",
+                  content: "This is the main content of the section.",
+                  media_url: null,
+                },
+              ],
+            },
+          ],
+        }))
+      }
+    })
+    setLessonsByModule(initialLessons)
+  }, [modules])
 
-    let isCancelled = false
+  const addSection = async (sectionData) => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const newSection = {
+        id: Date.now(),
+        lesson_id: selectedLesson.id,
+        position: (selectedLesson.sections?.length || 0) + 1,
+        title: sectionData.title,
+        body: sectionData.body,
+        est_read_seconds: Number.parseInt(sectionData.est_read_seconds) || 120,
+        is_checkpoint: sectionData.is_checkpoint || false,
+        blocks: [],
+      }
 
-    const loadLessons = async () => {
-      setIsLoading(true)
-      setError(null)
-
-      try {
-        const lessonsData = {}
-
-        // Load lessons for all modules in parallel
-        await Promise.all(
-          modules.map(async (module) => {
-            if (!module?.id) return
-
-            try {
-              const moduleLessons = await getLessonsByModule(module.id)
-              if (!isCancelled) {
-                lessonsData[String(module.id)] = moduleLessons
-              }
-            } catch (err) {
-              console.error(`Error loading lessons for module ${module.id}:`, err)
-              if (!isCancelled) {
-                lessonsData[String(module.id)] = []
-              }
-            }
-          }),
+      // Find the lesson and add the section
+      const moduleId = findModuleIdByLessonId(selectedLesson.id)
+      if (moduleId) {
+        const updatedLessons = lessonsByModule[moduleId].map((lesson) =>
+          lesson.id === selectedLesson.id ? { ...lesson, sections: [...(lesson.sections || []), newSection] } : lesson,
         )
+        handleLessonsUpdate(moduleId, updatedLessons)
+      }
 
-        if (!isCancelled) {
-          setLessonsByModule(lessonsData)
-        }
-      } catch (err) {
-        if (!isCancelled) {
-          setError(err.message || "Failed to load lessons")
-          console.error("Error loading lessons:", err)
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsLoading(false)
-        }
+      setIsAddSectionOpen(false)
+      setSelectedLesson(null)
+    } catch (err) {
+      setError(err.message || "Failed to create section")
+      console.error("Error creating section:", err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const addBlock = async (blockData) => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const newBlock = {
+        id: Date.now(),
+        section_id: selectedSection.id,
+        position: (selectedSection.blocks?.length || 0) + 1,
+        kind: blockData.kind,
+        content: blockData.content,
+        media_url: blockData.media_url || null,
+      }
+
+      // Find the lesson and section, then add the block
+      const moduleId = findModuleIdByLessonId(selectedLesson.id)
+      if (moduleId) {
+        const updatedLessons = lessonsByModule[moduleId].map((lesson) =>
+          lesson.id === selectedLesson.id
+            ? {
+                ...lesson,
+                sections: lesson.sections.map((section) =>
+                  section.id === selectedSection.id
+                    ? { ...section, blocks: [...(section.blocks || []), newBlock] }
+                    : section,
+                ),
+              }
+            : lesson,
+        )
+        handleLessonsUpdate(moduleId, updatedLessons)
+      }
+
+      setIsAddBlockOpen(false)
+      setSelectedSection(null)
+    } catch (err) {
+      setError(err.message || "Failed to create block")
+      console.error("Error creating block:", err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const findModuleIdByLessonId = (lessonId) => {
+    for (const [moduleId, lessons] of Object.entries(lessonsByModule)) {
+      if (lessons.find((lesson) => lesson.id === lessonId)) {
+        return moduleId
       }
     }
+    return null
+  }
 
-    loadLessons()
+  const toggleLessonExpansion = (lessonId) => {
+    setExpandedLessons((prev) => ({
+      ...prev,
+      [lessonId]: !prev[lessonId],
+    }))
+  }
 
-    return () => {
-      isCancelled = true
+  const getBlockIcon = (kind) => {
+    switch (kind) {
+      case "text":
+        return <Type className="h-4 w-4" />
+      case "image":
+        return <ImageIcon className="h-4 w-4" />
+      case "video":
+        return <Video className="h-4 w-4" />
+      case "code":
+        return <Code className="h-4 w-4" />
+      default:
+        return <FileText className="h-4 w-4" />
     }
-  }, [moduleIds, modules]) // Use stable moduleIds instead of modules array
+  }
+
+  const getBlockColor = (kind) => {
+    switch (kind) {
+      case "text":
+        return "bg-gray-100 text-gray-800"
+      case "image":
+        return "bg-green-100 text-green-800"
+      case "video":
+        return "bg-blue-100 text-blue-800"
+      case "code":
+        return "bg-purple-100 text-purple-800"
+      default:
+        return "bg-gray-100 text-gray-800"
+    }
+  }
 
   const addLesson = async (lessonData) => {
     setIsLoading(true)
     setError(null)
     try {
-      const newLesson = await createLesson({
-        moduleId: lessonData.moduleId, // Changed from module_id to moduleId
+      const newLesson = {
+        id: Date.now(),
         title: lessonData.title,
         summary: lessonData.description,
         content: lessonData.content,
-        videoUrl: lessonData.videoUrl, // Changed from video_url to videoUrl
-        durationSeconds: lessonData.duration ? lessonData.duration * 60 : null,
+        video_url: lessonData.videoUrl,
+        duration_seconds: lessonData.duration ? lessonData.duration * 60 : null,
         type: lessonData.type,
-      })
+        sections: [],
+      }
 
       handleLessonsUpdate(lessonData.moduleId, [...(lessonsByModule[lessonData.moduleId] || []), newLesson])
       setIsAddLessonOpen(false)
-      setSelectedModule("") // Reset selected module
+      setSelectedModule("")
     } catch (err) {
       setError(err.message || "Failed to create lesson")
       console.error("Error creating lesson:", err)
@@ -125,18 +238,6 @@ export function CourseLessons({ course, onUpdate, onSave }) {
     setIsLoading(true)
     setError(null)
     try {
-      // Use the correct field names that match your API
-      const apiUpdates = {
-        title: updates.title,
-        summary: updates.description, // Changed from description to summary
-        content: updates.content,
-        videoUrl: updates.videoUrl, // Use camelCase
-        durationSeconds: updates.duration ? updates.duration * 60 : null, // Use camelCase
-        type: updates.type,
-      }
-
-      await updateLesson(lessonId, apiUpdates)
-
       // Find which module this lesson belongs to
       let moduleId = null
       for (const [modId, lessons] of Object.entries(lessonsByModule)) {
@@ -152,8 +253,8 @@ export function CourseLessons({ course, onUpdate, onSave }) {
             ? {
                 ...lesson,
                 ...updates,
-                summary: updates.description, // Map description to summary
-                video_url: updates.videoUrl, // Map camelCase to snake_case
+                summary: updates.description,
+                video_url: updates.videoUrl,
                 duration_seconds: updates.duration ? updates.duration * 60 : null,
               }
             : lesson,
@@ -176,8 +277,6 @@ export function CourseLessons({ course, onUpdate, onSave }) {
     setIsLoading(true)
     setError(null)
     try {
-      await deleteLesson(lessonId)
-
       // Find which module this lesson belongs to
       let moduleId = null
       for (const [modId, lessons] of Object.entries(lessonsByModule)) {
@@ -234,18 +333,14 @@ export function CourseLessons({ course, onUpdate, onSave }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Course Lessons</h2>
-          <p className="text-muted-foreground">Create and manage individual lessons within your modules</p>
+          <p className="text-muted-foreground">Create and manage lessons with sections and content blocks</p>
         </div>
         <div className="flex gap-2">
-          {/*} <Button onClick={onSave} variant="outline" className="flex items-center gap-2 bg-transparent" disabled={isLoading}>
-            <Save className="h-4 w-4" />
-            {isLoading ? "Saving..." : "Save Changes"}
-          </Button> */}
           <Dialog
             open={isAddLessonOpen}
             onOpenChange={(open) => {
               setIsAddLessonOpen(open)
-              if (!open) setSelectedModule("") // Reset selected module when dialog closes
+              if (!open) setSelectedModule("")
             }}
           >
             <DialogTrigger asChild>
@@ -410,55 +505,169 @@ export function CourseLessons({ course, onUpdate, onSave }) {
                   ) : (
                     <div className="space-y-3">
                       {moduleLessons.map((lesson, index) => (
-                        <div key={lesson.id} className="flex items-center gap-4 p-4 border rounded-lg">
-                          <div className="flex items-center gap-3 flex-1">
-                            <div className={`p-2 rounded-lg ${getLessonTypeColor(lesson.type)}`}>
-                              {getLessonIcon(lesson.type)}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="font-medium">{lesson.title}</span>
-                                <Badge variant="secondary" className="text-xs">
-                                  {lesson.type}
-                                </Badge>
+                        <div key={lesson.id} className="border rounded-lg">
+                          <div className="flex items-center gap-4 p-4">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleLessonExpansion(lesson.id)}
+                              className="p-1"
+                            >
+                              {expandedLessons[lesson.id] ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
+                            </Button>
+
+                            <div className="flex items-center gap-3 flex-1">
+                              <div className={`p-2 rounded-lg ${getLessonTypeColor(lesson.type)}`}>
+                                {getLessonIcon(lesson.type)}
                               </div>
-                              {lesson.summary && <p className="text-sm text-muted-foreground">{lesson.summary}</p>}
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-medium">{lesson.title}</span>
+                                  <Badge variant="secondary" className="text-xs">
+                                    {lesson.type}
+                                  </Badge>
+                                  <Badge variant="outline" className="text-xs">
+                                    {lesson.sections?.length || 0} sections
+                                  </Badge>
+                                </div>
+                                {lesson.summary && <p className="text-sm text-muted-foreground">{lesson.summary}</p>}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                              {lesson.duration_seconds && (
+                                <div className="flex items-center gap-1">
+                                  <Clock className="h-4 w-4" />
+                                  <span>{Math.round(lesson.duration_seconds / 60)}m</span>
+                                </div>
+                              )}
+                              {lesson.video_url && (
+                                <div className="flex items-center gap-1">
+                                  <Play className="h-4 w-4" />
+                                  <span>Video</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setSelectedLesson(lesson)
+                                  setIsAddSectionOpen(true)
+                                }}
+                                disabled={isLoading}
+                              >
+                                <Plus className="h-4 w-4 mr-1" />
+                                Section
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setEditingLesson(lesson)}
+                                disabled={isLoading}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                            {lesson.duration_seconds && (
-                              <div className="flex items-center gap-1">
-                                <Clock className="h-4 w-4" />
-                                <span>{Math.round(lesson.duration_seconds / 60)}m</span>
-                              </div>
-                            )}
-                            {lesson.video_url && (
-                              <div className="flex items-center gap-1">
-                                <Play className="h-4 w-4" />
-                                <span>Video</span>
-                              </div>
-                            )}
-                          </div>
+                          {expandedLessons[lesson.id] && (
+                            <div className="border-t bg-gray-50 p-4">
+                              <div className="space-y-3">
+                                {lesson.sections?.length === 0 ? (
+                                  <div className="text-center py-4">
+                                    <p className="text-sm text-muted-foreground">No sections yet</p>
+                                  </div>
+                                ) : (
+                                  lesson.sections?.map((section, sectionIndex) => (
+                                    <div key={section.id} className="bg-white border rounded-lg p-3">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                          <GripVertical className="h-4 w-4 text-gray-400" />
+                                          <span className="font-medium">{section.title}</span>
+                                          {section.is_checkpoint && (
+                                            <Badge variant="secondary" className="text-xs">
+                                              <CheckCircle className="h-3 w-3 mr-1" />
+                                              Checkpoint
+                                            </Badge>
+                                          )}
+                                          <Badge variant="outline" className="text-xs">
+                                            {section.est_read_seconds}s read
+                                          </Badge>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                              setSelectedLesson(lesson)
+                                              setSelectedSection(section)
+                                              setIsAddBlockOpen(true)
+                                            }}
+                                            disabled={isLoading}
+                                          >
+                                            <Plus className="h-3 w-3 mr-1" />
+                                            Block
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => setEditingSection(section)}
+                                            disabled={isLoading}
+                                          >
+                                            <Edit className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      </div>
 
-                          <div className="flex items-center gap-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => setEditingLesson(lesson)}
-                              disabled={isLoading}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => deleteLessonHandler(lesson.id)}
-                              disabled={isLoading}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                                      {section.body && (
+                                        <p className="text-sm text-muted-foreground mb-3">{section.body}</p>
+                                      )}
+
+                                      {/* Blocks */}
+                                      <div className="space-y-2">
+                                        {section.blocks?.map((block, blockIndex) => (
+                                          <div
+                                            key={block.id}
+                                            className="flex items-center gap-3 p-2 bg-gray-50 rounded border"
+                                          >
+                                            <div className={`p-1 rounded ${getBlockColor(block.kind)}`}>
+                                              {getBlockIcon(block.kind)}
+                                            </div>
+                                            <div className="flex-1">
+                                              <div className="flex items-center gap-2">
+                                                <Badge variant="outline" className="text-xs">
+                                                  {block.kind}
+                                                </Badge>
+                                                <span className="text-sm">Position {block.position}</span>
+                                              </div>
+                                              <p className="text-sm text-muted-foreground truncate">
+                                                {block.content || block.media_url}
+                                              </p>
+                                            </div>
+                                            <Button
+                                              size="sm"
+                                              variant="ghost"
+                                              onClick={() => setEditingBlock(block)}
+                                              disabled={isLoading}
+                                            >
+                                              <Edit className="h-3 w-3" />
+                                            </Button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -469,6 +678,125 @@ export function CourseLessons({ course, onUpdate, onSave }) {
           })}
         </div>
       )}
+
+      <Dialog open={isAddSectionOpen} onOpenChange={setIsAddSectionOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add New Section</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const formData = new FormData(e.target)
+              addSection({
+                title: formData.get("title"),
+                body: formData.get("body"),
+                est_read_seconds: formData.get("est_read_seconds"),
+                is_checkpoint: formData.get("is_checkpoint") === "on",
+              })
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="section-title">Section Title *</Label>
+              <Input id="section-title" name="title" placeholder="Enter section title" required />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="section-body">Section Body</Label>
+              <Textarea id="section-body" name="body" placeholder="Enter section content" rows={4} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="est-read-seconds">Estimated Read Time (seconds)</Label>
+                <Input
+                  id="est-read-seconds"
+                  name="est_read_seconds"
+                  type="number"
+                  placeholder="120"
+                  min="0"
+                  defaultValue="120"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Checkbox name="is_checkpoint" />
+                  Mark as Checkpoint
+                </Label>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsAddSectionOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? "Adding..." : "Add Section"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAddBlockOpen} onOpenChange={setIsAddBlockOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add New Block</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              const formData = new FormData(e.target)
+              addBlock({
+                kind: formData.get("kind"),
+                content: formData.get("content"),
+                media_url: formData.get("media_url"),
+              })
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="block-kind">Block Type *</Label>
+              <Select name="kind" required>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select block type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="text">Text</SelectItem>
+                  <SelectItem value="image">Image</SelectItem>
+                  <SelectItem value="video">Video</SelectItem>
+                  <SelectItem value="code">Code</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="block-content">Content</Label>
+              <Textarea
+                id="block-content"
+                name="content"
+                placeholder="Enter block content (or alt text for media)"
+                rows={4}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="media-url">Media URL (for image/video blocks)</Label>
+              <Input id="media-url" name="media_url" placeholder="https://example.com/image.jpg" />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsAddBlockOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? "Adding..." : "Add Block"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Lesson Dialog */}
       <Dialog open={!!editingLesson} onOpenChange={() => setEditingLesson(null)}>

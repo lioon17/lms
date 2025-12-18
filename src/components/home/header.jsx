@@ -31,7 +31,7 @@ export default function Header() {
 
           {/* Login Button */}
           <div className="flex items-center space-x-4">
-            <Link href="/login">
+            <Link href="/auth">
               <Button variant="outline" size="sm" className="flex items-center gap-2 bg-transparent">
                 <LogIn className="h-4 w-4" />
                 <span className="hidden sm:inline">Login</span>

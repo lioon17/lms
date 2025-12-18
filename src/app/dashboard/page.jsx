@@ -3,7 +3,6 @@
 import { useSearchParams } from "next/navigation";
 import { AdminDashboard } from "@/components/dashboard/admin-dashboard";
 import { InstructorDashboard } from "@/components/dashboard/instructor-dashboard";
-import { StudentDashboard } from "@/components/dashboard/student-dashboard";
 import { useSessionGuard } from "@/hooks/useSessionGuard"
 import { AdminDashboardWithSidebar } from "@/components/dashboard/admin-dashboard-with-sidebar";
 
